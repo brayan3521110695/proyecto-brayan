@@ -10,10 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: node -v && npm -v
-      - run: npm ci --no-audit --no-fund
-      - run: npm run build
+
+      - name: Versiones
+        run: |
+          node -v
+          npm -v
+
+      - name: Instalar dependencias (ci con fallback)
+        run: |
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+        env:
+          CI: true
