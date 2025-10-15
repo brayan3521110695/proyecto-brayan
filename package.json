@@ -2,17 +2,23 @@
   "name": "proyecto-brayan",
   "private": true,
   "version": "0.0.0",
-"type": "commonjs",
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "vite preview --port 5173",
+    "server:start": "npm --prefix server start",
+    "server:dev": "npm --prefix server run dev",
     "prepare": "husky install"
   },
   "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "idb": "^8.0.3",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",
@@ -31,9 +37,11 @@
     "globals": "^16.3.0",
     "husky": "^8.0.3",
     "lint-staged": "^16.1.6",
+    "nodemon": "^3.1.10",
     "prettier": "^3.6.2",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2"
+    "vite": "^7.1.2",
+    "workbox-cli": "^7.3.0"
   }
 }
