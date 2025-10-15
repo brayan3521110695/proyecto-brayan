@@ -1,24 +1,23 @@
-// public/service-worker.js
-const SW_VERSION = 'v3.3'; // ← SUBE LA VERSIÓN PARA ROMPER CACHÉ
+const SW_VERSION = 'v3.3'; 
 
-// ---------- IndexedDB (OUTBOX) ----------
 const DB_NAME = 'pwa-db-v3';
 const DB_VERSION = 1;
 const OUTBOX = 'outbox';
-const BACKEND_URL = 'http://localhost:3000';
 
-// ---------- Cache names ----------
+const PROD_URL = 'https://proyecto-brayan.onrender.com'; 
+const BACKEND_URL = self.location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : PROD_URL;
+
 const STATIC_CACHE = `static-${SW_VERSION}`;
 const IMMUTABLE_CACHE = `immutable-${SW_VERSION}`;
 const DYNAMIC_CACHE = `dynamic-${SW_VERSION}`;
 
-// Rutas del App Shell (cache-first)
 const STATIC_URLS = [
   '/', '/index.html', '/offline.html', '/manifest.json', '/vite.svg',
   '/icons/icon-192.png', '/icons/icon-512.png',
 ];
 
-// Helpers
 const isSameOrigin = (url) => url.origin === self.location.origin;
 const isStaticShell = (pathname) => STATIC_URLS.includes(pathname);
 const isImmutableAsset = (pathname) => pathname.startsWith('/assets/');
@@ -26,7 +25,6 @@ const isImageLike = (pathname) => /\.(png|jpg|jpeg|gif|webp|svg|ico|avif)$/i.tes
 const isCSSorFont = (pathname) => /\.(css|woff2?|ttf|otf|eot)$/i.test(pathname);
 const isAPI = (pathname) => pathname.startsWith('/api/');
 
-// --------------- Install / Activate ---------------
 self.addEventListener('install', (e) => {
   console.log('[SW]', SW_VERSION, 'install');
   e.waitUntil(caches.open(STATIC_CACHE).then((c) => c.addAll(STATIC_URLS)));
@@ -44,12 +42,10 @@ self.addEventListener('activate', (e) => {
         }
       })
     );
-    // 🔕 No habilitamos navigationPreload para evitar “parpadeos”
     await self.clients.claim();
   })());
 });
 
-// --------------- Estrategias ---------------
 async function cacheFirst(cacheName, request) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request, { ignoreSearch: true });
@@ -87,23 +83,18 @@ async function networkFirst(cacheName, request) {
   }
 }
 
-// Navegaciones (sin cachear rutas inventadas)
 async function handleNavigation(event) {
   try {
-    // No usamos navigationPreload (desactivado), probamos red normal
     const net = await fetch(event.request, { redirect: 'follow' });
     return net;
   } catch {
-    // Sin red → decidir shell u offline
     const staticCache = await caches.open(STATIC_CACHE);
     const url = new URL(event.request.url);
 
-    // Shell conocido
     if (url.pathname === '/' || url.pathname === '/index.html') {
       const shell = await staticCache.match('/index.html');
       if (shell) return shell;
     }
-    // Ruta inventada → offline.html (URL permanece igual)
     const offline = await staticCache.match('/offline.html');
     if (offline) return offline;
 
@@ -111,53 +102,44 @@ async function handleNavigation(event) {
   }
 }
 
-// --------------- Fetch handler ---------------
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
 
-  // Navegaciones de documento
   if (request.mode === 'navigate') {
     event.respondWith(handleNavigation(event));
     return;
   }
 
-  // Solo mismo origen
   if (!isSameOrigin(url)) return;
 
   const { pathname } = url;
 
-  // App Shell -> cache-first
   if (isStaticShell(pathname)) {
     event.respondWith(cacheFirst(STATIC_CACHE, request));
     return;
   }
 
-  // Assets con hash (/assets/*) -> stale-while-revalidate (IMMUTABLE)
   if (isImmutableAsset(pathname)) {
     event.respondWith(staleWhileRevalidate(IMMUTABLE_CACHE, request));
     return;
   }
 
-  // Imágenes, CSS, fuentes -> stale-while-revalidate (DYNAMIC)
   if (isImageLike(pathname) || isCSSorFont(pathname)) {
     event.respondWith(staleWhileRevalidate(DYNAMIC_CACHE, request));
     return;
   }
 
-  // API -> network-first
   if (isAPI(pathname)) {
     event.respondWith(networkFirst(DYNAMIC_CACHE, request));
     return;
   }
 
-  // Otros GET mismo origen
   event.respondWith(staleWhileRevalidate(DYNAMIC_CACHE, request));
 });
 
-// --------------- Background Sync ---------------
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-entries') event.waitUntil(syncEntries());
 });
@@ -221,7 +203,6 @@ async function syncEntries() {
     console.warn('[SW] fetch error', e);
   }
 
-  // 3) Limpiar outbox + avisar a clientes
   if (ok) {
     const tx2 = db.transaction(OUTBOX, 'readwrite');
     await idbClear(tx2.objectStore(OUTBOX));
@@ -253,10 +234,10 @@ self.addEventListener('push', (event) => {
     body: data.body || 'Tienes un nuevo mensaje.',
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    image: data.image,                    // opcional
-    tag: data.tag || 'demo-push',         // agrupa/actualiza
+    image: data.image,                   
+    tag: data.tag || 'demo-push',         
     data: {
-      url: data.url || '/',               // adónde abrir al hacer clic
+      url: data.url || '/',               
       ...data,
     },
     actions: [
@@ -279,7 +260,6 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 
-    // 1) Si hay una pestaña con esa URL exacta, enfócala
     const exact = allClients.find((c) => {
       try { return new URL(c.url).pathname === new URL(urlToOpen, self.location.origin).pathname; }
       catch { return false; }
@@ -289,7 +269,6 @@ self.addEventListener('notificationclick', (event) => {
       return;
     }
 
-    // 2) Si hay alguna pestaña de nuestro origin, navegarla a la URL y enfocarla
     const anyClient = allClients.find((c) => c.url.startsWith(self.location.origin));
     if (anyClient && 'navigate' in anyClient) {
       await anyClient.navigate(urlToOpen);

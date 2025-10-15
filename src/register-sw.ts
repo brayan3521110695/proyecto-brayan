@@ -1,4 +1,3 @@
-// src/register-sw.ts
 type SWOptions = {
   onMessage?: (data: any) => void;
   syncTag?: string;
@@ -7,6 +6,11 @@ type SWOptions = {
 export function isSWSupported(): boolean {
   return 'serviceWorker' in navigator;
 }
+
+const API_BASE =
+  location.hostname === 'localhost'
+    ? 'http://localhost:3000'
+    : 'https://proyecto-brayan.onrender.com'; 
 
 export async function registerSW(opts: SWOptions = {}) {
   if (!isSWSupported()) return null;
@@ -18,19 +22,15 @@ export async function registerSW(opts: SWOptions = {}) {
 
   const registering = (async () => {
     try {
-      // 1) BUST-CACHE del SW
       const swUrl = `/service-worker.js?ts=${Date.now()}`;
       const reg = await navigator.serviceWorker.register(swUrl, {
         updateViaCache: 'none',
       });
 
-      // 2) Esperar controlador listo
       const readyReg = await navigator.serviceWorker.ready;
 
-      // 3) Forzar comprobación de actualización (una vez)
       try { await reg.update(); } catch {}
 
-      // 4) Listener de mensajes (único)
       if (opts.onMessage) {
         const prev = (window as any).__swMsgHandler as ((e: MessageEvent) => void) | undefined;
         if (prev) navigator.serviceWorker.removeEventListener('message', prev);
@@ -42,9 +42,7 @@ export async function registerSW(opts: SWOptions = {}) {
         navigator.serviceWorker.addEventListener('message', handler);
       }
 
-      // 5) No forzar recargas en controllerchange
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        // Si alguna vez quieres recargar al cambiar de SW, hazlo aquí pero con condiciones.
       });
 
       return readyReg;
@@ -100,7 +98,6 @@ export async function askNotificationPermission(): Promise<NotificationPermissio
   return Notification.permission;
 }
 
-/** Compara la appServerKey actual con la esperada (para re-suscribir si cambió) */
 function sameAppServerKey(sub: PushSubscription, targetKey: Uint8Array): boolean {
   try {
     const current = new Uint8Array((sub.options as any).applicationServerKey);
@@ -112,7 +109,6 @@ function sameAppServerKey(sub: PushSubscription, targetKey: Uint8Array): boolean
   } catch { return false; }
 }
 
-/** Crea/recupera la suscripción del PushManager y la envía al backend */
 export async function ensurePushSubscribed(vapidPublicKey: string): Promise<PushSubscription | null> {
   if (!isSWSupported()) return null;
 
@@ -127,7 +123,6 @@ export async function ensurePushSubscribed(vapidPublicKey: string): Promise<Push
 
   let sub = await reg.pushManager.getSubscription();
 
-  // Re-suscribir si existe pero con otra VAPID key
   if (sub && !sameAppServerKey(sub, key)) {
     try { await sub.unsubscribe(); } catch {}
     sub = null;
@@ -140,9 +135,8 @@ export async function ensurePushSubscribed(vapidPublicKey: string): Promise<Push
     });
   }
 
-  // Envía la suscripción a tu backend
   try {
-    await fetch('/api/push/subscribe', {
+    await fetch(`${API_BASE}/api/push/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sub),
