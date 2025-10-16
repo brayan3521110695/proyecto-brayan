@@ -1,3 +1,5 @@
+// src/register-sw.ts
+
 type SWOptions = {
   onMessage?: (data: any) => void;
   syncTag?: string;
@@ -10,7 +12,8 @@ export function isSWSupported(): boolean {
 const API_BASE =
   location.hostname === 'localhost'
     ? 'http://localhost:3000'
-    : 'https://proyecto-brayan.onrender.com'; 
+    : 'https://proyecto-brayan.onrender.com';
+
 
 export async function registerSW(opts: SWOptions = {}) {
   if (!isSWSupported()) return null;
@@ -27,23 +30,30 @@ export async function registerSW(opts: SWOptions = {}) {
         updateViaCache: 'none',
       });
 
+      // Espera a que esté listo
       const readyReg = await navigator.serviceWorker.ready;
 
-      try { await reg.update(); } catch {}
+      try {
+        await reg.update();
+      } catch {}
 
+      // Listener de mensajes del SW
       if (opts.onMessage) {
-        const prev = (window as any).__swMsgHandler as ((e: MessageEvent) => void) | undefined;
+        const prev = (window as any).__swMsgHandler as
+          | ((e: MessageEvent) => void)
+          | undefined;
         if (prev) navigator.serviceWorker.removeEventListener('message', prev);
 
         const handler = (e: MessageEvent) => {
-          try { opts.onMessage!(e.data); } catch {}
+          try {
+            opts.onMessage!(e.data);
+          } catch {}
         };
         (window as any).__swMsgHandler = handler;
         navigator.serviceWorker.addEventListener('message', handler);
       }
 
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {});
 
       return readyReg;
     } catch (e) {
@@ -62,7 +72,10 @@ export async function requestSync(tag: string = 'sync-entries') {
   if (!isSWSupported()) return;
   const reg = await navigator.serviceWorker.ready;
   if ('sync' in reg) {
-    try { await (reg as any).sync.register(tag); return; } catch {}
+    try {
+      await (reg as any).sync.register(tag);
+      return;
+    } catch {}
   }
   reg.active?.postMessage({ type: 'SYNC_NOW', tag });
 }
@@ -75,12 +88,13 @@ export async function syncNow(tag: string = 'sync-entries') {
 
 export function autoSyncOnOnline(tag: string = 'sync-entries') {
   if (!isSWSupported()) return;
-  const handler = async () => { await requestSync(tag); };
+  const handler = async () => {
+    await requestSync(tag);
+  };
   window.addEventListener('online', handler);
   return () => window.removeEventListener('online', handler);
 }
 
-// --- PUSH helpers ----
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -106,10 +120,14 @@ function sameAppServerKey(sub: PushSubscription, targetKey: Uint8Array): boolean
       if (current[i] !== targetKey[i]) return false;
     }
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
-export async function ensurePushSubscribed(vapidPublicKey: string): Promise<PushSubscription | null> {
+export async function ensurePushSubscribed(
+  vapidPublicKey: string
+): Promise<PushSubscription | null> {
   if (!isSWSupported()) return null;
 
   const permission = await askNotificationPermission();
@@ -124,10 +142,13 @@ export async function ensurePushSubscribed(vapidPublicKey: string): Promise<Push
   let sub = await reg.pushManager.getSubscription();
 
   if (sub && !sameAppServerKey(sub, key)) {
-    try { await sub.unsubscribe(); } catch {}
+    try {
+      await sub.unsubscribe();
+    } catch {}
     sub = null;
   }
 
+  // Crear nueva suscripción si no existe
   if (!sub) {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
@@ -135,6 +156,7 @@ export async function ensurePushSubscribed(vapidPublicKey: string): Promise<Push
     });
   }
 
+  // Enviar al backend (Render o localhost)
   try {
     await fetch(`${API_BASE}/api/push/subscribe`, {
       method: 'POST',
