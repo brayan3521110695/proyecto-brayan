@@ -1,69 +1,178 @@
-# React + TypeScript + Vite
+# 🌐 PWA – BrayanApp (v3.3)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicación Web Progresiva (**PWA**) desarrollada con **Vite + React + TypeScript**, que permite registrar actividades incluso sin conexión a Internet.  
+Los datos se almacenan localmente en **IndexedDB** (outbox) y se sincronizan automáticamente con el servidor mediante **Background Sync** cuando la conexión regresa.  
+Además, la app integra **notificaciones push** mediante **VAPID** (Web Push Protocol) y un backend en **Render (Node + Express)**.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🚀 Características principales
 
-## Expanding the ESLint configuration
+-  **App Shell** con carga instantánea (HTML, CSS y JS cacheados).  
+-  **Modo offline completo** gracias a **IndexedDB**.  
+-  **Background Sync API**: sincroniza los datos pendientes al reconectarse.  
+-  **Notificaciones Push** (con suscripción VAPID).  
+-  **Página personalizada sin conexión (`offline.html`)**.  
+-  **Estrategias de caché avanzadas** (Cache First, Stale-While-Revalidate, Network First).  
+-  **Instalable (A2HS)** en dispositivos móviles y escritorio.  
+-  **Desplegada en HTTPS**:
+  - **Frontend (Vercel):** [https://proyecto-brayan.vercel.app](https://proyecto-brayan.vercel.app)
+  - **Backend (Render):** [https://proyecto-brayan.onrender.com](https://proyecto-brayan.onrender.com)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Estructura del proyecto
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+proyecto-brayan/
+│
+├── public/
+│   ├── service-worker.js         # SW: caché, background sync y push
+│   ├── offline.html              # Página sin conexión personalizada
+│   ├── manifest.json             # Configuración para instalación PWA
+│   └── icons/                    # Íconos (192, 512, etc.)
+│
+├── src/
+│   ├── register-sw.ts            # Registro del Service Worker y Push API
+│   ├── lib/                      # IndexedDB y lógica local
+│   ├── components/               # EntryForm, EntryList, OfflineBadge
+│   ├── api/                      # Comunicación con el backend
+│   ├── App.tsx / main.tsx        # App Shell React
+│   └── styles/                   # Estilos globales
+│
+├── server/
+│   ├── index.js                  # Backend Node.js + Web Push
+│   ├── .env                      # Claves VAPID privadas/públicas
+│   └── package.json
+│
+├── package.json                  # Configuración Frontend
+└── README.md                     # Documentación completa
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+---
+
+## ⚙️ Estrategias de Caché
+
+| Tipo de recurso | Estrategia aplicada | Justificación |
+|-----------------|--------------------|----------------|
+| **App Shell** (`/`, `/index.html`, `/manifest.json`, `/offline.html`, `/vite.svg`) | **Cache First** | Permite carga inmediata del esqueleto base de la app incluso sin conexión. |
+| **Assets con hash** (`/assets/*`) | **Stale-While-Revalidate** | Carga rápida y actualización silenciosa de versiones nuevas. |
+| **Imágenes, CSS y fuentes** | **Stale-While-Revalidate** | Mantiene la app visualmente fluida mientras actualiza los recursos. |
+| **API REST (`/api/*`)** | **Network First** | Prioriza datos actualizados; usa caché solo si no hay red. |
+| **Página offline (`offline.html`)** | **Cache Only** | Garantiza que siempre haya respuesta cuando no hay conexión. |
+
+---
+
+###  Implementación real (`service-worker.js`)
 
 ```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+  const url = new URL(request.url);
+  if (request.mode === 'navigate') {
+    event.respondWith(handleNavigation(event));
+    return;
+  }
+
+  if (STATIC_URLS.includes(url.pathname)) {
+    return event.respondWith(cacheFirst(STATIC_CACHE, request));
+  }
+  if (url.pathname.startsWith('/assets/')) {
+    return event.respondWith(staleWhileRevalidate(IMMUTABLE_CACHE, request));
+  }
+  if (/\.(png|jpg|jpeg|svg|ico|css|woff2?|ttf)$/i.test(url.pathname)) {
+    return event.respondWith(staleWhileRevalidate(DYNAMIC_CACHE, request));
+  }
+  if (url.pathname.startsWith('/api/')) {
+    return event.respondWith(networkFirst(DYNAMIC_CACHE, request));
+  }
+  event.respondWith(staleWhileRevalidate(DYNAMIC_CACHE, request));
+});
 ```
+
+---
+
+##  Background Sync y Notificaciones Push
+
+### Implementación real
+
+```js
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-entries') {
+    event.waitUntil(syncEntries());
+  }
+});
+
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : {};
+  const title = data.title || 'Notificación';
+  const options = {
+    body: data.body || 'Tienes un nuevo mensaje.',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: data.url || '/' },
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification.data?.url || '/';
+  event.waitUntil(clients.openWindow(urlToOpen));
+});
+```
+
+### Justificación
+
+Estas funciones garantizan que:
+- Los datos almacenados en IndexedDB se sincronicen automáticamente cuando vuelve la red.
+- El usuario reciba notificaciones push incluso con la app cerrada.
+- Se mantenga la comunicación constante sin necesidad de recargar la página.
+
+---
+
+##  Instalación y ejecución local
+
+```bash
+git clone https://github.com/brayan3521110695/proyecto-brayan.git
+npm install
+npm run dev
+cd server && npm install && node index.js
+```
+
+---
+
+## 🧪 Pruebas realizadas
+
+ **Offline:** formulario funcional sin conexión (IndexedDB).  
+ **Background Sync:** al reconectarse se envían los datos pendientes.  
+ **Página offline:** muestra mensaje personalizado.  
+ **Push Notifications:** recibe notificación de prueba desde Render.  
+ **Instalable:** confirmada en Chrome y Android.  
+ **Lighthouse:** rendimiento y accesibilidad altos.  
+
+---
+
+##  Arquitectura del sistema
+
+```
+Usuario / Navegador
+   │
+   ▼
+[ App Shell React ]
+   │
+   ▼
+[ Service Worker ]
+   ├─ Cache Storage (static, immutable, dynamic)
+   ├─ IndexedDB (outbox)
+   ├─ Background Sync
+   └─ Push Notifications
+       │
+       ▼
+[ Servidor Node/Render (API REST + Web Push) ]
+       │
+       ▼
+[ Push Service del navegador ]
+
